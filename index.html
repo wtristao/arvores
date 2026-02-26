@@ -1,15 +1,69 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fruit Tree Map</title>
+    <title>Mapa de Árvores Frutíferas - Prado BA</title>
+    
+    <!-- CSS do Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .instrucoes {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            max-width: 200px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to the Fruit Tree Map Application</h1>
-    <p>Explore different types of fruit trees.</p>
+
+    <div class="instrucoes">
+        <h4>Pomar Urbano: Prado</h4>
+        <p>Clique no mapa para adicionar o local de uma árvore frutífera.</p>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- JS do Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <script>
-        // Add JavaScript code here for tree mapping
+        // 1. Centralizar o mapa em Prado, Bahia
+        const map = L.map('map').setView([-17.3411, -39.2208], 15);
+
+        // 2. Adicionar camada de mapa (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Exemplos iniciais (Marcadores fixos)
+        const arvoresIniciais = [
+            { lat: -17.3400, lng: -39.2200, fruta: "Mangueira" },
+            { lat: -17.3420, lng: -39.2215, fruta: "Cajueiro" }
+        ];
+
+        arvoresIniciais.forEach(a => {
+            L.marker([a.lat, a.lng]).addTo(map).bindPopup(`<b>${a.fruta}</b>`);
+        });
+
+        // 3. Função para adicionar novos locais ao clicar
+        function onMapClick(e) {
+            const fruta = prompt("Qual árvore frutífera existe aqui? (Ex: Pitangueira, Coqueiro)");
+            
+            if (fruta) {
+                const novoMarcador = L.marker(e.latlng).addTo(map);
+                novoMarcador.bindPopup(`<b>${fruta}</b><br>Adicionado recentemente`).openPopup();
+                
+                // Aqui você poderia enviar 'e.latlng' e 'fruta' para um banco de dados
+                console.log(`Nova árvore: ${fruta} em ${e.latlng}`);
+            }
+        }
+
+        map.on('click', onMapClick);
     </script>
 </body>
 </html>
