@@ -43,3 +43,4 @@ Se quiser, eu posso:
 - Ajudar a criar as regras iniciais mais seguras (ex.: permitir escrita somente se houver um campo user não vazio),
 - Ou automatizar o deploy do frontend (Netlify/GitHub Pages) para que não seja necessário rodar o servidor local.
 <!-- Deploy trigger: atualiza página para disparar workflow -->
+trigger deploy
