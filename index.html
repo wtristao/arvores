@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mapa de Árvores Frutíferas - Prado BA</title>
+    <title>Mapa de Árvores Frutíferas - Prado BA (Firebase)</title>
     
     <!-- CSS do Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -15,7 +15,7 @@
             position: absolute; top: 10px; right: 10px; z-index: 1000;
             background: white; padding: 10px; border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            max-width: 240px;
+            max-width: 320px;
         }
     </style>
 </head>
@@ -24,15 +24,34 @@
     <div class="instrucoes">
         <h4>Pomar Urbano: Prado</h4>
         <p>Clique no mapa para adicionar o local de uma árvore frutífera.</p>
-        <p>Os dados são salvos no servidor e ficam disponíveis para todos os usuários.</p>
+        <p>Os dados são salvos em nuvem (Firebase) e ficam disponíveis para todos os usuários em tempo real.</p>
+        <p style="font-size:12px;color:#666">Observação: configure o arquivo <code>firebase-config.js</code> a partir do exemplo <code>firebase-config.example.js</code>.</p>
     </div>
 
     <div id="map"></div>
 
     <!-- JS do Leaflet -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
+
+    <!-- Arquivo com sua configuração do Firebase (crie a partir do exemplo) -->
+    <script src="/firebase-config.js"></script>
+
+    <!-- Firebase compat SDK (mais simples para inclusão via CDN) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
     <script>
+        if (!window.firebaseConfig) {
+            console.error('firebaseConfig não encontrado. Copie firebase-config.example.js para firebase-config.js e preencha com os dados do seu projeto Firebase.');
+            document.body.innerHTML = '<div style="padding:20px;font-family:sans-serif">Erro: <strong>firebaseConfig</strong> não encontrado. Veja README e crie <code>firebase-config.js</code> a partir do exemplo.</div>';
+            throw new Error('firebaseConfig missing');
+        }
+
+        // Inicializa o Firebase
+        firebase.initializeApp(window.firebaseConfig);
+        const db = firebase.database();
+        const treesRef = db.ref('trees');
+
         // 1. Centralizar o mapa em Prado, Bahia
         const map = L.map('map').setView([-17.3411, -39.2208], 15);
 
@@ -41,28 +60,41 @@
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        // Função para buscar árvores do servidor
-        async function fetchTrees() {
-            try {
-                const res = await fetch('/api/trees');
-                if (!res.ok) throw new Error('Falha ao carregar árvores');
-                const trees = await res.json();
-                return trees;
-            } catch (err) {
-                console.error(err);
-                return [];
-            }
-        }
+        // Guarda marcadores para evitar duplicação
+        const markers = {};
 
-        // Renderizar marcadores a partir de dados
-        async function renderTrees() {
-            const trees = await fetchTrees();
-            trees.forEach(t => {
-                const marker = L.marker([t.lat, t.lng]).addTo(map);
-                const userInfo = t.user ? `<br><small>Adicionado por: ${t.user}</small>` : '';
-                marker.bindPopup(`<b>${t.fruta}</b>${userInfo}`);
-            });
-        }
+        // Quando um nó for adicionado (inclui os já existentes), adiciona marcador
+        treesRef.on('child_added', snapshot => {
+            const val = snapshot.val();
+            const key = snapshot.key;
+            if (!val || !val.lat || !val.lng) return;
+            if (markers[key]) return; // já existe
+            const marker = L.marker([val.lat, val.lng]).addTo(map);
+            const userInfo = val.user ? `<br><small>Adicionado por: ${val.user}</small>` : '';
+            marker.bindPopup(`<b>${val.fruta}</b>${userInfo}`);
+            markers[key] = marker;
+        });
+
+        // Se um nó for removido, remove marcador
+        treesRef.on('child_removed', snapshot => {
+            const key = snapshot.key;
+            if (markers[key]) {
+                map.removeLayer(markers[key]);
+                delete markers[key];
+            }
+        });
+
+        // Se um nó for alterado, atualiza marcador
+        treesRef.on('child_changed', snapshot => {
+            const val = snapshot.val();
+            const key = snapshot.key;
+            if (markers[key]) {
+                const m = markers[key];
+                m.setLatLng([val.lat, val.lng]);
+                const userInfo = val.user ? `<br><small>Adicionado por: ${val.user}</small>` : '';
+                m.bindPopup(`<b>${val.fruta}</b>${userInfo}`);
+            }
+        });
 
         // 3. Função para adicionar novos locais ao clicar
         async function onMapClick(e) {
@@ -70,29 +102,39 @@
             if (!fruta) return;
             const user = prompt('Seu nome (opcional) para identificar a contribuição:');
 
-            const payload = { lat: e.latlng.lat, lng: e.latlng.lng, fruta, user };
+            const payload = {
+                lat: e.latlng.lat,
+                lng: e.latlng.lng,
+                fruta: fruta,
+                user: user || null,
+                createdAt: new Date().toISOString()
+            };
 
             try {
-                const res = await fetch('/api/trees', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error('Erro ao salvar');
-                const saved = await res.json();
-                const novoMarcador = L.marker([saved.lat, saved.lng]).addTo(map);
-                const userInfo = saved.user ? `<br><small>Adicionado por: ${saved.user}</small>` : '';
-                novoMarcador.bindPopup(`<b>${saved.fruta}</b>${userInfo}`).openPopup();
+                await treesRef.push(payload);
+                // O listener child_added adicionará o marcador automaticamente
             } catch (err) {
-                alert('Não foi possível salvar a árvore no servidor. Tente novamente.');
+                alert('Não foi possível salvar a árvore no Firebase. Verifique a configuração.');
                 console.error(err);
             }
         }
 
         map.on('click', onMapClick);
 
-        // Inicializa marcadores do servidor
-        renderTrees();
+        // Pequeno ajuste: botão para forçar recarregar todos (apenas para debug)
+        const button = L.control({ position: 'topright' });
+        button.onAdd = function () {
+            const el = L.DomUtil.create('div', 'reload-button');
+            el.innerHTML = '<button style="padding:6px">Recarregar árvores</button>';
+            el.firstChild.onclick = () => {
+                // limpa marcadores locais e refaz (Firebase child_added tratará os nodes)
+                Object.keys(markers).forEach(k => { map.removeLayer(markers[k]); delete markers[k]; });
+                treesRef.once('value');
+            };
+            return el;
+        };
+        button.addTo(map);
+
     </script>
 </body>
 </html>
